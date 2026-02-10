@@ -2,6 +2,8 @@
 
 Sound packs for Claude Code - play sounds on session start, prompt submit, notification, and stop events.
 
+Inspired by [@delba_oliveira](https://x.com/delba_oliveira/status/2020515010985005255?s=20) on X. I'm just trying to make it easy to install.
+
 ## Requirements
 
 - macOS (uses `afplay`)
