@@ -57,7 +57,9 @@ Or manually copy your pack folder to `~/.claude/hooks/sound-packs/`.
 
 ## Included Packs
 
+- **claude-created** - AI-generated sound effects
+- **nintendo-like** - Nintendo-inspired sounds
+- **office-micheal** - The Office Michael Scott sounds
+- **sc-terran** - StarCraft Terran sounds
 - **wow-peasant** - World of Warcraft peasant sounds
 - **wow-peon** - World of Warcraft peon sounds
-- **sc-terran** - StarCraft Terran sounds
-- **office-micheal** - The Office Michael Scott sounds
