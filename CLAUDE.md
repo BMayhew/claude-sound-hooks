@@ -42,8 +42,8 @@ The scripts modify `~/.claude/settings.json` to add/remove entries like:
 - `skill/SKILL.md` - Claude Code skill definition that maps `/sound-pack` to the bash script
 - `packs/*/` - Sound pack folders, each containing 4 WAV files
 
-**Required WAV files per pack:**
-`session-start.wav`, `prompt-submit.wav`, `notification.wav`, `stop.wav`
+**Required audio files per pack (WAV or MP3):**
+`session-start`, `prompt-submit`, `notification`, `stop`
 
 ## Dependencies
 
