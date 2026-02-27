@@ -50,7 +50,7 @@ Use the `/sound-pack` skill command in Claude Code:
 ## Adding Custom Sound Packs
 
 1. Create a folder in `packs/` with your pack name
-2. Add 4 wav files: `session-start.wav`, `prompt-submit.wav`, `notification.wav`, `stop.wav`
+2. Add 4 audio files (WAV or MP3): `session-start`, `prompt-submit`, `notification`, `stop`
 3. Re-run `bash install.sh` to copy the new pack
 
 Or manually copy your pack folder to `~/.claude/hooks/sound-packs/`.

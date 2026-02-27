@@ -74,13 +74,17 @@ PACK_PATH="$PACKS_DIR/$ACTIVE"
 
 if [ "$ENABLED" = "true" ]; then
   EVENTS=("SessionStart" "UserPromptSubmit" "Notification" "Stop")
-  WAV_FILES=("session-start.wav" "prompt-submit.wav" "notification.wav" "stop.wav")
+  BASE_FILES=("session-start" "prompt-submit" "notification" "stop")
 
   jq_expr=""
   for i in "${!EVENTS[@]}"; do
     event="${EVENTS[$i]}"
-    file="${WAV_FILES[$i]}"
-    cmd="afplay -v $VOLUME $PACK_PATH/$file"
+    file=$(ls "$PACK_PATH/${BASE_FILES[$i]}".*  2>/dev/null | head -1)
+    if [ -z "$file" ]; then
+      echo "Warning: missing file ${BASE_FILES[$i]}.* in pack $ACTIVE, skipping hook for $event"
+      continue
+    fi
+    cmd="afplay -v $VOLUME $file"
     if [ -n "$jq_expr" ]; then
       jq_expr="$jq_expr | "
     fi

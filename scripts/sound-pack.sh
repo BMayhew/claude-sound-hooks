@@ -8,7 +8,7 @@ ENABLED_FILE="$PACKS_DIR/.enabled"
 SETTINGS_FILE="$HOME/.claude/settings.json"
 
 EVENTS=("SessionStart" "UserPromptSubmit" "Notification" "Stop")
-FILES=("session-start.wav" "prompt-submit.wav" "notification.wav" "stop.wav")
+FILES=("session-start" "prompt-submit" "notification" "stop")
 
 ACTION="${1:-list}"
 ARG="$2"
@@ -54,8 +54,13 @@ inject_hooks() {
   local jq_expr=""
   for i in "${!EVENTS[@]}"; do
     local event="${EVENTS[$i]}"
-    local file="${FILES[$i]}"
-    local cmd="afplay -v $vol $pack_path/$file"
+    local file
+    file=$(ls "$pack_path/${FILES[$i]}".*  2>/dev/null | head -1)
+    if [ -z "$file" ]; then
+      echo "Missing file in pack: ${FILES[$i]}.*"
+      return 1
+    fi
+    local cmd="afplay -v $vol $file"
     if [ -n "$jq_expr" ]; then
       jq_expr="$jq_expr | "
     fi
@@ -119,9 +124,9 @@ case "$ACTION" in
       exit 1
     fi
 
-    for file in "${FILES[@]}"; do
-      if [ ! -f "$pack_path/$file" ]; then
-        echo "Missing file in pack: $file"
+    for base in "${FILES[@]}"; do
+      if ! ls "$pack_path/$base".* &>/dev/null; then
+        echo "Missing file in pack: $base.*"
         exit 1
       fi
     done
