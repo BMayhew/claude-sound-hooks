@@ -1,110 +1,67 @@
 #!/bin/bash
+# Manages sound pack state. Writes three files; hooks/play.sh reads them on the
+# next event, so nothing here ever touches settings.json (except `cleanup`).
 
-HOOKS_DIR="$HOME/.claude/hooks"
-PACKS_DIR="$HOOKS_DIR/sound-packs"
-ACTIVE_FILE="$PACKS_DIR/.active"
-VOLUME_FILE="$PACKS_DIR/.volume"
-ENABLED_FILE="$PACKS_DIR/.enabled"
+USER_DIR="$HOME/.claude/hooks/sound-packs"
+BUNDLED_DIR="$(cd "$(dirname "$0")/.." && pwd)/packs"
 SETTINGS_FILE="$HOME/.claude/settings.json"
 
-EVENTS=("SessionStart" "UserPromptSubmit" "Notification" "Stop")
+# Legacy artifacts written by the pre-2.0 install.sh.
+LEGACY_RE='afplay -v [^"]*sound-packs/'
+LEGACY_SCRIPT="$HOME/.claude/hooks/sound-pack.sh"
+LEGACY_SKILL="$HOME/.claude/skills/sound-pack"
+
 FILES=("session-start" "prompt-submit" "notification" "stop")
 
 ACTION="${1:-list}"
 ARG="$2"
 
-# --- Helper functions ---
+# --- Helpers ---
 
-get_active() {
-  if [ -f "$ACTIVE_FILE" ]; then
-    tr -d '[:space:]' < "$ACTIVE_FILE"
-  else
-    echo ""
+read_state() {
+  # An empty file falls back to the default, same as hooks/play.sh.
+  local v=""
+  [ -f "$USER_DIR/$1" ] && v=$(tr -d '[:space:]' < "$USER_DIR/$1")
+  echo "${v:-$2}"
+}
+
+write_state() {
+  mkdir -p "$USER_DIR"
+  echo "$2" > "$USER_DIR/$1"
+}
+
+# User packs shadow bundled ones of the same name.
+pack_path() {
+  if [ -d "$USER_DIR/$1" ]; then
+    echo "$USER_DIR/$1"
+  elif [ -d "$BUNDLED_DIR/$1" ]; then
+    echo "$BUNDLED_DIR/$1"
   fi
 }
 
-get_volume() {
-  if [ -f "$VOLUME_FILE" ]; then
-    tr -d '[:space:]' < "$VOLUME_FILE"
-  else
-    echo "0.5"
-  fi
+pack_names() {
+  for dir in "$BUNDLED_DIR"/*/ "$USER_DIR"/*/; do
+    [ -d "$dir" ] && basename "$dir"
+  done | sort -u
 }
 
-is_enabled() {
-  if [ -f "$ENABLED_FILE" ]; then
-    val=$(tr -d '[:space:]' < "$ENABLED_FILE")
-    [ "$val" = "true" ]
-  else
-    return 0
-  fi
-}
-
-inject_hooks() {
-  local pack=$(get_active)
-  local vol=$(get_volume)
-  local pack_path="$PACKS_DIR/$pack"
-
-  if [ ! -d "$pack_path" ]; then
-    echo "Error: active pack '$pack' not found"
-    return 1
-  fi
-
-  local tmp=$(mktemp)
-  local jq_expr=""
-  for i in "${!EVENTS[@]}"; do
-    local event="${EVENTS[$i]}"
-    local file
-    file=$(ls "$pack_path/${FILES[$i]}".*  2>/dev/null | head -1)
-    if [ -z "$file" ]; then
-      echo "Missing file in pack: ${FILES[$i]}.*"
-      return 1
-    fi
-    local cmd="afplay -v $vol $file"
-    if [ -n "$jq_expr" ]; then
-      jq_expr="$jq_expr | "
-    fi
-    jq_expr="$jq_expr.hooks.${event} = [{\"hooks\": [{\"type\": \"command\", \"command\": \"$cmd\"}]}]"
-  done
-
-  jq "$jq_expr" "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
-}
-
-remove_hooks() {
-  local tmp=$(mktemp)
-  local jq_expr=""
-  for event in "${EVENTS[@]}"; do
-    if [ -n "$jq_expr" ]; then
-      jq_expr="$jq_expr | "
-    fi
-    jq_expr="${jq_expr}del(.hooks.${event})"
-  done
-
-  jq "$jq_expr" "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
+state_word() {
+  if [ "$(read_state .enabled true)" = "true" ]; then echo "on"; else echo "off"; fi
 }
 
 # --- Commands ---
 
 case "$ACTION" in
   list)
-    active=$(get_active)
-    vol=$(get_volume)
-    if is_enabled; then
-      state="on"
-    else
-      state="off"
-    fi
-
-    echo "Sound packs (volume: $vol, sounds: $state):"
-    for dir in "$PACKS_DIR"/*/; do
-      [ -d "$dir" ] || continue
-      name=$(basename "$dir")
+    active=$(read_state .active wow-peasant)
+    echo "Sound packs (volume: $(read_state .volume 0.5), sounds: $(state_word)):"
+    while read -r name; do
       if [ "$name" = "$active" ]; then
         echo "  * $name (active)"
       else
         echo "    $name"
       fi
-    done
+    done < <(pack_names)
     ;;
 
   set)
@@ -113,88 +70,126 @@ case "$ACTION" in
       exit 1
     fi
 
-    pack_path="$PACKS_DIR/$ARG"
-    if [ ! -d "$pack_path" ]; then
+    path=$(pack_path "$ARG")
+    if [ -z "$path" ]; then
       echo "Sound pack not found: $ARG"
       echo "Available packs:"
-      for dir in "$PACKS_DIR"/*/; do
-        [ -d "$dir" ] || continue
-        echo "  $(basename "$dir")"
-      done
+      pack_names | sed 's/^/  /'
       exit 1
     fi
 
     for base in "${FILES[@]}"; do
-      if ! ls "$pack_path/$base".* &>/dev/null; then
+      if ! ls "$path/$base".* &>/dev/null; then
         echo "Missing file in pack: $base.*"
         exit 1
       fi
     done
 
-    echo "$ARG" > "$ACTIVE_FILE"
-
-    if is_enabled; then
-      inject_hooks
-    fi
-
+    write_state .active "$ARG"
     echo "Switched to sound pack: $ARG"
     ;;
 
   current)
-    active=$(get_active)
-    if [ -n "$active" ]; then
-      echo "$active"
-    else
-      echo "No active sound pack"
-      exit 1
-    fi
+    echo "$(read_state .active wow-peasant)"
     ;;
 
   volume)
     if [ -z "$ARG" ]; then
-      echo "$(get_volume)"
+      echo "$(read_state .volume 0.5)"
     else
-      if ! echo "$ARG" | grep -qE '^[01](\.[0-9]+)?$'; then
+      if ! echo "$ARG" | grep -qE '^(0(\.[0-9]+)?|1(\.0+)?)$'; then
         echo "Volume must be between 0.0 and 1.0"
         exit 1
       fi
-      echo "$ARG" > "$VOLUME_FILE"
-
-      if is_enabled; then
-        inject_hooks
-      fi
-
+      write_state .volume "$ARG"
       echo "Volume set to $ARG"
     fi
     ;;
 
   on)
-    echo "true" > "$ENABLED_FILE"
-    inject_hooks
+    write_state .enabled true
     echo "Sounds enabled"
     ;;
 
   off)
-    echo "false" > "$ENABLED_FILE"
-    remove_hooks
+    write_state .enabled false
     echo "Sounds disabled"
     ;;
 
   status)
-    active=$(get_active)
-    vol=$(get_volume)
-    if is_enabled; then
-      state="on"
-    else
-      state="off"
+    echo "Pack: $(read_state .active wow-peasant)"
+    echo "Volume: $(read_state .volume 0.5)"
+    echo "Sounds: $(state_word)"
+    ;;
+
+  cleanup)
+    # Migration only. The pre-2.0 install.sh left three things behind: hook
+    # entries in settings.json, a copy of the old script, and a user-level
+    # `sound-pack` skill. All three have to go - the old script re-injects the
+    # hook entries on its next set/volume/on, which would re-mute the plugin
+    # straight after a cleanup that only touched settings.json.
+    did_something=0
+
+    if [ -f "$SETTINGS_FILE" ] && grep -q "$LEGACY_RE" "$SETTINGS_FILE"; then
+      if ! command -v jq &>/dev/null; then
+        echo "Error: jq is required to clean up legacy hooks. Install with: brew install jq"
+        exit 1
+      fi
+
+      # Drop only the commands this project wrote. Filter inside each group so a
+      # group where the user added their own command keeps that command, then
+      # drop groups and events left empty.
+      tmp=$(mktemp)
+      if jq '
+        reduce ("SessionStart", "UserPromptSubmit", "Notification", "Stop") as $e (.;
+          if .hooks[$e] then
+            .hooks[$e] |= (
+              map(.hooks |= map(select((.command // "") | test("afplay -v .*sound-packs/") | not)))
+              | map(select((.hooks | length) > 0))
+            )
+            | if (.hooks[$e] | length) == 0 then del(.hooks[$e]) else . end
+          else . end)
+      ' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"; then
+        echo "Removed legacy sound hooks from settings.json"
+        did_something=1
+      else
+        rm -f "$tmp"
+        echo "Error: could not rewrite $SETTINGS_FILE (is it valid JSON?). Nothing was changed."
+        exit 1
+      fi
     fi
-    echo "Pack: $active"
-    echo "Volume: $vol"
-    echo "Sounds: $state"
+
+    if [ -f "$LEGACY_SCRIPT" ]; then
+      rm -f "$LEGACY_SCRIPT" && echo "Removed old $LEGACY_SCRIPT"
+      did_something=1
+    fi
+
+    if [ -d "$LEGACY_SKILL" ]; then
+      rm -rf "$LEGACY_SKILL" && echo "Removed old skill at $LEGACY_SKILL"
+      did_something=1
+    fi
+
+    if [ "$did_something" = "0" ]; then
+      echo "Nothing to clean up."
+      exit 0
+    fi
+
+    # Confirm rather than claim. play.sh greps the whole file, so something the
+    # rewrite above does not reach - a stale entry under another event, say -
+    # would leave playback muted with no explanation.
+    if [ -f "$SETTINGS_FILE" ] && grep -q "$LEGACY_RE" "$SETTINGS_FILE"; then
+      echo ""
+      echo "Warning: settings.json still contains a legacy sound command, so sounds stay muted."
+      echo "Remove the remaining entry by hand:"
+      grep -n "$LEGACY_RE" "$SETTINGS_FILE"
+      exit 1
+    fi
+
+    echo "Sounds are live again."
     ;;
 
   *)
-    echo "Usage: sound-pack.sh <list|set|current|volume|on|off|status> [arg]"
+    echo "Usage: sound-pack.sh <list|set|current|volume|on|off|status|cleanup> [arg]"
     exit 1
     ;;
 esac

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-sound-hooks",
+  "description": "Sound packs that give Claude Code audio feedback on session start, prompt submit, notification and stop.",
+  "owner": { "name": "BMayhew", "url": "https://github.com/BMayhew" },
+  "plugins": [
+    {
+      "name": "sound-hooks",
+      "source": "./",
+      "description": "Sound packs for Claude Code hooks.",
+      "category": "productivity"
+    }
+  ]
+}
